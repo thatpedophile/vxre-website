@@ -125,7 +125,8 @@ async function startTelegramPolling() {
   while (true) {
     try {
       const res = await fetch(
-        `https://api.telegram.org/bot${botToken}/getUpdates?offset=${offset}&timeout=25&allowed_updates=["message"]`
+        `https://api.telegram.org/bot${botToken}/getUpdates?offset=${offset}&timeout=10&allowed_updates=["message"]`,
+        { signal: AbortSignal.timeout(15000) }
       );
 
       if (!res.ok) {
@@ -674,7 +675,7 @@ async function startTelegramPolling() {
         }
       }
     } catch (err) {
-      console.error('[Telegram Bot] Polling error:', err);
+      // Long polling timeout or socket drop - wait briefly and retry gracefully
       await new Promise((r) => setTimeout(r, 4000));
     }
   }
