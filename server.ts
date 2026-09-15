@@ -15,6 +15,14 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// In-memory set of authorized sudo users (stored as string user IDs or lowercase @usernames)
+const sudoUsers = new Set<string>();
+
+// Helper to escape markdown special characters for Telegram alerts
+function escapeMd(text: string): string {
+  return text.replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&');
+}
+
 // Telegram Contact Dispatch Endpoint
 app.post('/api/contact', async (req, res) => {
   try {
@@ -103,29 +111,192 @@ async function startTelegramPolling() {
           const msg = update.message;
           if (!msg || !msg.text) continue;
 
-          const rawText = msg.text.trim().toLowerCase();
-          const isStartCommand = rawText.startsWith('/start');
-          const isHelpCommand = rawText.startsWith('/help') || rawText.startsWith('/portal') || rawText.startsWith('/contact');
+          const rawText = msg.text.trim();
+          const lowerText = rawText.toLowerCase();
+          const isStartCommand = lowerText.startsWith('/start');
+          const isHelpCommand = lowerText.startsWith('/help') || lowerText.startsWith('/portal') || lowerText.startsWith('/contact');
+          const isSudoCommand = lowerText.startsWith('/sudo');
+          const isUnsudoCommand = lowerText.startsWith('/unsudo');
+          const isSudoListCommand = lowerText.startsWith('/sudolist');
 
           // Strict Authorization Check:
-          // Only respond if the message is from your authorized Group OR your direct Personal User ID
+          // Authorized entities: Owner ID, Authorized Group ID, or any user added to sudoUsers
           const currentChatId = String(msg.chat.id);
           const currentSenderId = String(msg.from?.id || '');
+          const currentSenderUsername = (msg.from?.username || '').toLowerCase();
           const authorizedGroupId = String(process.env.TELEGRAM_CHAT_ID || '-1004399283423');
           const authorizedOwnerId = String(process.env.TELEGRAM_OWNER_ID || '8761043571');
 
+          const isOwner = currentSenderId === authorizedOwnerId;
+          const isSudoUser =
+            sudoUsers.has(currentSenderId) ||
+            (currentSenderUsername && sudoUsers.has(`@${currentSenderUsername}`));
+
           const isAuthorized =
-            currentChatId === authorizedGroupId ||
-            currentSenderId === authorizedOwnerId;
+            isOwner ||
+            isSudoUser ||
+            currentChatId === authorizedGroupId;
 
           // If an unauthorized user attempts to interact with the bot:
           if (!isAuthorized) {
-            console.warn(`[Telegram Bot] Ignored message from unauthorized user: ${currentSenderId} in chat: ${currentChatId}`);
-            // Completely silent: Do not reply, do not acknowledge
+            console.warn(`[Telegram Bot] Unauthorized interaction attempt by user: ${currentSenderId} (${msg.from?.username || 'No username'})`);
+
+            // Dispatch an immediate security alert directly to the OWNER:
+            const attackerInfo =
+              `🚨 *SECURITY ALERT: UNAUTHORIZED ACCESS ATTEMPT* 🚨\n\n` +
+              `An unauthorized user attempted to interact with your VXRE bot:\n\n` +
+              `👤 *Name:* ${escapeMd(msg.from?.first_name || '')} ${escapeMd(msg.from?.last_name || '')}\n` +
+              `🆔 *Numeric ID:* \`${currentSenderId}\`\n` +
+              `🔗 *Username:* ${msg.from?.username ? '@' + escapeMd(msg.from.username) : 'None'}\n` +
+              `💬 *Message / Command:* \`${escapeMd(rawText.slice(0, 100))}\`\n` +
+              `🕒 *Timestamp:* ${escapeMd(new Date().toLocaleString())}\n\n` +
+              `_The bot stayed completely silent and did not respond to this user._\n` +
+              `_To grant them sudo access, reply with:_ \`/sudo ${currentSenderId}\``;
+
+            try {
+              await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  chat_id: authorizedOwnerId,
+                  text: attackerInfo,
+                  parse_mode: 'Markdown',
+                }),
+              });
+            } catch (alertErr) {
+              console.error('Failed to notify owner about unauthorized user:', alertErr);
+            }
+
+            // Remain silent to the unauthorized user
             continue;
           }
 
-          // Respond to /start or /help in authorized contexts (owner or group)
+          // --- OWNER PRIVILEGED COMMANDS (/sudo, /unsudo, /sudolist) ---
+          if (isSudoCommand && !isSudoListCommand) {
+            if (!isOwner) {
+              await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  chat_id: msg.chat.id,
+                  reply_to_message_id: msg.message_id,
+                  text: '⛔ *Permission Denied:* Only the supreme owner can grant sudo privileges.',
+                  parse_mode: 'Markdown',
+                }),
+              });
+              continue;
+            }
+
+            const parts = rawText.split(/\s+/);
+            const target = parts[1]?.trim();
+
+            if (!target) {
+              await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  chat_id: msg.chat.id,
+                  reply_to_message_id: msg.message_id,
+                  text: '⚠️ *Usage:* `/sudo <numeric_id | @username>`\n\nExample:\n`/sudo 123456789`\n`/sudo @alexander`',
+                  parse_mode: 'Markdown',
+                }),
+              });
+              continue;
+            }
+
+            const cleanTarget = target.startsWith('@') ? target.toLowerCase() : target;
+            sudoUsers.add(cleanTarget);
+
+            await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  chat_id: msg.chat.id,
+                  reply_to_message_id: msg.message_id,
+                  text: `✅ *Privilege Granted:* \`${cleanTarget}\` has been elevated to *Sudo*. They can now communicate with the bot directly.`,
+                  parse_mode: 'Markdown',
+                }),
+              });
+            continue;
+          }
+
+          if (isUnsudoCommand) {
+            if (!isOwner) {
+              await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  chat_id: msg.chat.id,
+                  reply_to_message_id: msg.message_id,
+                  text: '⛔ *Permission Denied:* Only the supreme owner can revoke sudo privileges.',
+                  parse_mode: 'Markdown',
+                }),
+              });
+              continue;
+            }
+
+            const parts = rawText.split(/\s+/);
+            const target = parts[1]?.trim();
+            const cleanTarget = target?.startsWith('@') ? target.toLowerCase() : target;
+
+            if (cleanTarget && sudoUsers.has(cleanTarget)) {
+              sudoUsers.delete(cleanTarget);
+              await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  chat_id: msg.chat.id,
+                  reply_to_message_id: msg.message_id,
+                  text: `🗑️ *Privilege Revoked:* \`${cleanTarget}\` has been removed from Sudo list.`,
+                  parse_mode: 'Markdown',
+                }),
+              });
+            } else {
+              await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  chat_id: msg.chat.id,
+                  reply_to_message_id: msg.message_id,
+                  text: `⚠️ Target \`${target || 'none'}\` is not in the Sudo list.`,
+                  parse_mode: 'Markdown',
+                }),
+              });
+            }
+            continue;
+          }
+
+          if (isSudoListCommand) {
+            if (!isOwner && !isSudoUser) {
+              continue;
+            }
+
+            const sudoArray = Array.from(sudoUsers);
+            const listText =
+              sudoArray.length === 0
+                ? '_No additional sudo users elevated._'
+                : sudoArray.map((u, i) => `${i + 1}. \`${u}\``).join('\n');
+
+            await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: msg.chat.id,
+                reply_to_message_id: msg.message_id,
+                text:
+                  `🛡️ *VXRE SOVEREIGN ACCESS REGISTRY*\n\n` +
+                  `👑 *Supreme Owner:* \`${authorizedOwnerId}\`\n` +
+                  `🏛️ *Authorized Group:* \`${authorizedGroupId}\`\n\n` +
+                  `⚡ *Elevated Sudo Operators (${sudoArray.length}):*\n${listText}\n\n` +
+                  `_To add sudo:_ \`/sudo <id | @username>\`\n` +
+                  `_To revoke sudo:_ \`/unsudo <id | @username>\``,
+                parse_mode: 'Markdown',
+              }),
+            });
+            continue;
+          }
+
+          // Respond to /start or /help in authorized contexts (owner, sudo, or group)
           if (isStartCommand || isHelpCommand || msg.chat.type === 'private') {
             const senderName = msg.from?.first_name || 'Imperial Client';
             const portalUrl =
