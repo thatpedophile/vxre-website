@@ -64,7 +64,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose }) =
       setTimeout(() => {
         setStatus('idle');
         onClose();
-      }, 3000);
+      }, 4000);
     } catch (err: any) {
       console.error('Contact submission error:', err);
       setStatus('error');
@@ -272,9 +272,14 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose }) =
           )}
 
           {status === 'success' && (
-            <div className="flex items-center gap-2.5 p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-900 text-xs">
-              <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
-              <p className="font-medium">Transmission successfully delivered to VXRE Telegram Operations.</p>
+            <div className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-900 text-xs">
+              <Sparkles className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold">Thank you for reaching out!</p>
+                <p className="text-emerald-800 mt-0.5 leading-relaxed">
+                  Our team has received your inquiry and will reach out to you as soon as possible.
+                </p>
+              </div>
             </div>
           )}
 
@@ -291,7 +296,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose }) =
             ) : status === 'success' ? (
               <>
                 <Check className="w-4 h-4 text-emerald-400" />
-                <span>Dispatched to Telegram Group</span>
+                <span>Response Received • Thank You</span>
               </>
             ) : (
               <>
