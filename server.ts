@@ -28,10 +28,12 @@ app.post(['/inbound', '/api/inbound'], async (req, res) => {
     let textBody = emailMetadata.text || emailMetadata.html?.replace(/<[^>]*>/g, '') || 'Could not retrieve email body.';
 
     const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN || '8822102406:AAGwMQDrH0PTtygnYOAEHWKJ4qgaxHFHwHs';
-    // We send directly to the owner DM ID instead of the group
-    const ownerId = process.env.TELEGRAM_OWNER_ID || '8761043571';
+    // Send to group ID
+    const targetChatId = process.env.TELEGRAM_CHAT_ID || '-1004399283423';
 
-    if (telegramBotToken && ownerId) {
+    console.log(`[INBOUND WEBHOOK] Received email from ${sender} with subject: ${subject}`);
+
+    if (telegramBotToken && targetChatId) {
       const message =
         `📧 *New Inbound Email*\n\n` +
         `👤 *From:* ${sender}\n` +
@@ -39,15 +41,21 @@ app.post(['/inbound', '/api/inbound'], async (req, res) => {
         `🕒 *Received:* ${new Date().toLocaleString()}\n\n` +
         `📝 *Message:*\n${textBody}`;
 
-      await fetch(`https://api.telegram.org/bot${telegramBotToken}/sendMessage`, {
+      const tgRes = await fetch(`https://api.telegram.org/bot${telegramBotToken}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          chat_id: ownerId,
+          chat_id: targetChatId,
           text: message,
           parse_mode: 'Markdown'
         }),
       });
+      
+      if (!tgRes.ok) {
+         console.error('[INBOUND WEBHOOK] Failed to forward to telegram:', await tgRes.text());
+      } else {
+         console.log('[INBOUND WEBHOOK] Successfully forwarded to telegram group');
+      }
     }
 
     return res.status(200).json({ status: 'success' });
