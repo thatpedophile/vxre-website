@@ -111,7 +111,7 @@ async function startTelegramPolling() {
             const senderName = msg.from?.first_name || 'Imperial Client';
             const portalUrl =
               process.env.APP_URL ||
-              'https://ais-pre-jbve5trbz6j27t5rnxd37c-647477389810.asia-southeast1.run.app';
+              'https://vxre.run.place';
 
             const responseText =
               `🏛️ *VXRE // IMPERIAL SOCIAL ARCHITECTURE*\n\n` +

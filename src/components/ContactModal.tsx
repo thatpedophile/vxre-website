@@ -179,12 +179,32 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose }) =
               </div>
               <div className="text-[11px] text-[#2f2f2f]/60 mt-0.5">Encrypted inbox delivery</div>
             </div>
-            <a
-              href="mailto:contact@vxre.run.place?subject=Inquiry%20via%20VXRE%20Imperial%20Site"
-              className="w-full py-2.5 px-3 rounded-2xl glass-btn font-sans-custom text-xs font-bold uppercase tracking-wider text-center transition-colors"
-            >
-              Send Direct Email
-            </a>
+            <div className="flex flex-col gap-1.5">
+              <a
+                href="mailto:contact@vxre.run.place?subject=Inquiry%20via%20VXRE%20Portal"
+                onClick={(e) => {
+                  // Fallback for browsers / devices with no native mail app configured
+                  try {
+                    navigator.clipboard.writeText('contact@vxre.run.place');
+                    setCopiedEmail(true);
+                    setTimeout(() => setCopiedEmail(false), 2500);
+                  } catch (err) {
+                    console.warn(err);
+                  }
+                }}
+                className="w-full py-2.5 px-3 rounded-2xl glass-btn font-sans-custom text-xs font-bold uppercase tracking-wider text-center transition-colors hover:bg-black/5"
+              >
+                {copiedEmail ? 'Email Copied!' : 'Send Direct Email'}
+              </a>
+              <a
+                href="https://mail.google.com/mail/?view=cm&fs=1&to=contact@vxre.run.place&su=Inquiry%20via%20VXRE%20Portal"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-center text-[10px] text-[#2f2f2f]/60 hover:text-[#2f2f2f] transition-colors underline"
+              >
+                Or compose in Gmail (web)
+              </a>
+            </div>
           </div>
         </div>
 
