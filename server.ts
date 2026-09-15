@@ -11,8 +11,50 @@ const PORT = 3000;
 app.use(express.json());
 
 // API health endpoint
-app.get('/api/health', (_req, res) => {
+app.get(['/api/health', '/health'], (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Inbound email webhook from Resend (Forwards to DM)
+app.post(['/inbound', '/api/inbound'], async (req, res) => {
+  try {
+    const data = req.body;
+    const emailMetadata = data?.data || data || {};
+
+    const sender = emailMetadata.from || 'Unknown Sender';
+    const subject = emailMetadata.subject || '(No Subject)';
+    
+    // We try to get text, then html if text is empty
+    let textBody = emailMetadata.text || emailMetadata.html?.replace(/<[^>]*>/g, '') || 'Could not retrieve email body.';
+
+    const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN || '8822102406:AAGwMQDrH0PTtygnYOAEHWKJ4qgaxHFHwHs';
+    // We send directly to the owner DM ID instead of the group
+    const ownerId = process.env.TELEGRAM_OWNER_ID || '8761043571';
+
+    if (telegramBotToken && ownerId) {
+      const message =
+        `📧 *New Inbound Email*\n\n` +
+        `👤 *From:* ${sender}\n` +
+        `📌 *Subject:* ${subject}\n` +
+        `🕒 *Received:* ${new Date().toLocaleString()}\n\n` +
+        `📝 *Message:*\n${textBody}`;
+
+      await fetch(`https://api.telegram.org/bot${telegramBotToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: ownerId,
+          text: message,
+          parse_mode: 'Markdown'
+        }),
+      });
+    }
+
+    return res.status(200).json({ status: 'success' });
+  } catch (error: any) {
+    console.error('[INBOUND ERROR]', error);
+    return res.status(500).json({ error: error.message });
+  }
 });
 
 // In-memory set of authorized sudo users (stored as string user IDs or lowercase @usernames)
