@@ -476,20 +476,95 @@ async function startTelegramPolling() {
 
             // If target is an email address:
             if (isEmailAddress) {
-              await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  chat_id: msg.chat.id,
-                  reply_to_message_id: msg.message_id,
-                  text:
-                    `📧 *Email Transmission Queued*\n\n` +
-                    `🎯 *To:* \`${target}\`\n` +
-                    `📌 *Subject:* \`${subject}\`\n\n` +
-                    `Note: Direct email relay is active for Telegram target IDs. For SMTP outbound mail routing, ensure your SMTP relay is configured.`,
-                  parse_mode: 'Markdown',
-                }),
-              });
+              const resendApiKey = process.env.RESEND_API_KEY || '';
+
+              if (!resendApiKey) {
+                await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    chat_id: msg.chat.id,
+                    reply_to_message_id: msg.message_id,
+                    text: `⚠️ *Resend API Key Missing:*\nPlease set \`RESEND_API_KEY\` in your environment variables on Render to dispatch outbound emails directly via Telegram.`,
+                    parse_mode: 'Markdown',
+                  }),
+                });
+                continue;
+              }
+
+              try {
+                const formattedHtml = `
+                  <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; color: #111; line-height: 1.6;">
+                    <div style="border-bottom: 2px solid #000; padding-bottom: 12px; margin-bottom: 20px;">
+                      <span style="font-size: 18px; font-weight: 800; letter-spacing: 0.1em;">VXRE</span>
+                      <span style="font-size: 11px; color: #666; margin-left: 8px; text-transform: uppercase; letter-spacing: 0.05em;">Imperial Dispatch</span>
+                    </div>
+                    <h2 style="font-size: 20px; font-weight: 700; margin: 0 0 16px 0; color: #000;">${escapeMd(subject)}</h2>
+                    <div style="background: #f9f9fb; border-left: 3px solid #000; padding: 16px 20px; margin-bottom: 24px; font-size: 15px; white-space: pre-wrap;">${bodyMessage}</div>
+                    <div style="font-size: 12px; color: #888; border-top: 1px solid #eee; padding-top: 16px;">
+                      Dispatched by authorized operator via VXRE sovereign terminal.<br>
+                      Official portal: <a href="https://vxre.run.place" style="color: #000; font-weight: 600; text-decoration: none;">vxre.run.place</a>
+                    </div>
+                  </div>
+                `;
+
+                const emailRes = await fetch('https://api.resend.com/emails', {
+                  method: 'POST',
+                  headers: {
+                    Authorization: `Bearer ${resendApiKey}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    from: 'VXRE <no-reply@vxre.run.place>',
+                    to: [target],
+                    subject: subject,
+                    html: formattedHtml,
+                  }),
+                });
+
+                const emailResult = (await emailRes.json()) as { id?: string; error?: { message: string } };
+
+                if (emailRes.ok && emailResult.id) {
+                  await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      chat_id: msg.chat.id,
+                      reply_to_message_id: msg.message_id,
+                      text:
+                        `📧 *Email Transmission Dispatched!*\n\n` +
+                        `🎯 *To:* \`${target}\`\n` +
+                        `📌 *Subject:* \`${subject}\`\n` +
+                        `📬 *From:* \`no-reply@vxre.run.place\`\n` +
+                        `🆔 *Resend ID:* \`${emailResult.id}\`\n\n` +
+                        `_Cryptographic signatures (SPF, DKIM, DMARC) attached._`,
+                      parse_mode: 'Markdown',
+                    }),
+                  });
+                } else {
+                  await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      chat_id: msg.chat.id,
+                      reply_to_message_id: msg.message_id,
+                      text: `⚠️ *Email Transmission Failed:*\n_${escapeMd(emailResult.error?.message || 'Resend API returned an error.')}_`,
+                      parse_mode: 'Markdown',
+                    }),
+                  });
+                }
+              } catch (emailErr: any) {
+                await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    chat_id: msg.chat.id,
+                    reply_to_message_id: msg.message_id,
+                    text: `❌ *Network error sending email:* ${escapeMd(emailErr?.message || 'Unknown error')}`,
+                    parse_mode: 'Markdown',
+                  }),
+                });
+              }
               continue;
             }
 
