@@ -1,0 +1,6 @@
+{
+  "name": "VXRE",
+  "description": "Imperial digital agency and web architecture with ethereal aesthetic, contact via contact@vxre.run.place and WhatsApp +57 315 1969168.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
