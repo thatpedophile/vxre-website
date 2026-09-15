@@ -114,7 +114,8 @@ async function startTelegramPolling() {
           const rawText = msg.text.trim();
           const lowerText = rawText.toLowerCase();
           const isStartCommand = lowerText.startsWith('/start');
-          const isHelpCommand = lowerText.startsWith('/help') || lowerText.startsWith('/portal') || lowerText.startsWith('/contact');
+          const isHelpCommand = lowerText === '/help' || lowerText.startsWith('/help ');
+          const isSendCommand = lowerText.startsWith('/send');
           const isSudoCommand = lowerText.startsWith('/sudo');
           const isUnsudoCommand = lowerText.startsWith('/unsudo');
           const isSudoListCommand = lowerText.startsWith('/sudolist');
@@ -296,8 +297,218 @@ async function startTelegramPolling() {
             continue;
           }
 
-          // Respond to /start or /help in authorized contexts (owner, sudo, or group)
-          if (isStartCommand || isHelpCommand || msg.chat.type === 'private') {
+          // --- /help COMMAND: LIST ALL COMMANDS, MEANINGS & USE CASES ---
+          if (isHelpCommand) {
+            const helpText =
+              `📜 *VXRE BOT // COMMAND MANUAL & SPECIFICATION*\n\n` +
+              `✦ *PUBLIC & CORE COMMANDS:*\n` +
+              `• \`/start\`\n` +
+              `  └ *Purpose:* Welcomes verified operators and displays quick access links to the live VXRE portal & executive WhatsApp line.\n\n` +
+              `• \`/help\`\n` +
+              `  └ *Purpose:* Displays this comprehensive command documentation and exact usage formats.\n\n` +
+              `✦ *TRANSMISSION COMMANDS:*\n` +
+              `• \`/send [target] [subject] [message]\`\n` +
+              `  └ *Purpose:* Dispatches a sovereign transmission to a designated user ID, group, or email.\n` +
+              `  └ *Syntax Options:*\n` +
+              `     1. Bracketed format:\n` +
+              `        \`/send [8761043571] [Partnership Retainer] Hello, we are ready to proceed with deployment.\`\n` +
+              `     2. Standard format:\n` +
+              `        \`/send 8761043571 Partnership Retainer | Hello, we are ready to proceed.\`\n\n` +
+              `✦ *OWNER PRIVILEGED ACCESS CONTROLS:*\n` +
+              `• \`/sudo <numeric_id | @username>\`\n` +
+              `  └ *Access:* Supreme Owner only\n` +
+              `  └ *Purpose:* Grants sudo operator privileges to another Telegram user.\n` +
+              `  └ *Example:* \`/sudo 123456789\` or \`/sudo @colleague\`\n\n` +
+              `• \`/unsudo <numeric_id | @username>\`\n` +
+              `  └ *Access:* Supreme Owner only\n` +
+              `  └ *Purpose:* Immediately revokes sudo privileges from an operator.\n` +
+              `  └ *Example:* \`/unsudo 123456789\`\n\n` +
+              `• \`/sudolist\`\n` +
+              `  └ *Access:* Supreme Owner & Sudo Operators\n` +
+              `  └ *Purpose:* Inspects registry of currently authorized sudo operators.\n\n` +
+              `🛡️ *Security:* Any message from unauthorized users triggers an instant security alert to the owner.`;
+
+            await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: msg.chat.id,
+                reply_to_message_id: msg.message_id,
+                text: helpText,
+                parse_mode: 'Markdown',
+              }),
+            });
+            continue;
+          }
+
+          // --- /send COMMAND: DISPATCH TRANSMISSION ---
+          if (isSendCommand) {
+            // Remove the initial /send
+            const commandContent = rawText.replace(/^\/send(@\w+)?/i, '').trim();
+
+            if (!commandContent) {
+              await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  chat_id: msg.chat.id,
+                  reply_to_message_id: msg.message_id,
+                  text:
+                    `ℹ️ *SEND TRANSMISSION USAGE:*\n\n` +
+                    `*Format:*\n` +
+                    `\`/send [user_id | email] [subject] [your message details]\`\n\n` +
+                    `*Example:*\n` +
+                    `\`/send [8761043571] [Project Update] The custom domain vxre.run.place is fully configured and active.\`\n\n` +
+                    `_You can also use:_\n` +
+                    `\`/send 8761043571 Project Update | Your full message here\``,
+                  parse_mode: 'Markdown',
+                }),
+              });
+              continue;
+            }
+
+            let target = '';
+            let subject = '';
+            let bodyMessage = '';
+
+            // 1. Try parsing bracket syntax: /send [target] [subject] message...
+            const bracketRegex = /^\[([^\]]+)\]\s*\[([^\]]+)\]\s*([\s\S]+)$/;
+            const bracketMatch = commandContent.match(bracketRegex);
+
+            if (bracketMatch) {
+              target = bracketMatch[1].trim();
+              subject = bracketMatch[2].trim();
+              bodyMessage = bracketMatch[3].trim();
+            } else {
+              // 2. Try pipe delimiter: /send target subject | body
+              const pipeParts = commandContent.split('|');
+              if (pipeParts.length >= 2) {
+                const headParts = pipeParts[0].trim().split(/\s+/);
+                target = headParts[0] || '';
+                subject = headParts.slice(1).join(' ') || 'Imperial Notice';
+                bodyMessage = pipeParts.slice(1).join('|').trim();
+              } else {
+                // 3. Fallback: space separated
+                const parts = commandContent.split(/\s+/);
+                target = parts[0] || '';
+                subject = parts[1] || 'Direct Transmission';
+                bodyMessage = parts.slice(2).join(' ') || '';
+              }
+            }
+
+            if (!target || !bodyMessage) {
+              await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  chat_id: msg.chat.id,
+                  reply_to_message_id: msg.message_id,
+                  text: `⚠️ *Missing Parameters:* Please provide target ID, subject, and message content.\n\n*Format:* \`/send [user_id] [subject] [your message here]\``,
+                  parse_mode: 'Markdown',
+                }),
+              });
+              continue;
+            }
+
+            // Clean target (strip @ if provided or handle numeric telegram chat ID)
+            const isNumericChat = /^-?\d+$/.test(target);
+            const isEmailAddress = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(target);
+
+            // If it's a Telegram user/group ID:
+            if (isNumericChat) {
+              const dispatchText =
+                `⚡ *NEW INCOMING TRANSMISSION* ⚡\n\n` +
+                `🏷️ *Subject:* ${subject}\n` +
+                `👤 *Dispatched By:* ${msg.from?.first_name || 'Operator'} (${msg.from?.username ? '@' + msg.from.username : msg.from?.id})\n` +
+                `🕒 *Timestamp:* ${new Date().toLocaleString()}\n\n` +
+                `📝 *Message:*\n${bodyMessage}`;
+
+              try {
+                const sendRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    chat_id: target,
+                    text: dispatchText,
+                    parse_mode: 'Markdown',
+                  }),
+                });
+
+                const sendResult = (await sendRes.json()) as { ok: boolean; description?: string };
+
+                if (sendResult.ok) {
+                  await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      chat_id: msg.chat.id,
+                      reply_to_message_id: msg.message_id,
+                      text: `✅ *Transmission Successfully Delivered!*\n\n🎯 *Recipient:* \`${target}\`\n📌 *Subject:* \`${subject}\`\n📨 *Payload Length:* ${bodyMessage.length} characters`,
+                      parse_mode: 'Markdown',
+                    }),
+                  });
+                } else {
+                  await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      chat_id: msg.chat.id,
+                      reply_to_message_id: msg.message_id,
+                      text: `⚠️ *Delivery Failed:* Telegram returned:\n_${escapeMd(sendResult.description || 'User has not started the bot or blocked it.')}_`,
+                      parse_mode: 'Markdown',
+                    }),
+                  });
+                }
+              } catch (dispatchErr: any) {
+                await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    chat_id: msg.chat.id,
+                    reply_to_message_id: msg.message_id,
+                    text: `❌ *Transmission Network Error:* ${escapeMd(dispatchErr?.message || 'Failed to connect.')}`,
+                    parse_mode: 'Markdown',
+                  }),
+                });
+              }
+              continue;
+            }
+
+            // If target is an email address:
+            if (isEmailAddress) {
+              await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  chat_id: msg.chat.id,
+                  reply_to_message_id: msg.message_id,
+                  text:
+                    `📧 *Email Transmission Queued*\n\n` +
+                    `🎯 *To:* \`${target}\`\n` +
+                    `📌 *Subject:* \`${subject}\`\n\n` +
+                    `Note: Direct email relay is active for Telegram target IDs. For SMTP outbound mail routing, ensure your SMTP relay is configured.`,
+                  parse_mode: 'Markdown',
+                }),
+              });
+              continue;
+            }
+
+            // If target is an unrecognized format
+            await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: msg.chat.id,
+                reply_to_message_id: msg.message_id,
+                text: `⚠️ *Unrecognized Target:* \`${target}\`. Please specify a numeric Telegram ID (e.g. \`8761043571\` or \`-1004399283423\`).`,
+                parse_mode: 'Markdown',
+              }),
+            });
+            continue;
+          }
+
+          // Respond to /start in authorized contexts (owner, sudo, or group)
+          if (isStartCommand || msg.chat.type === 'private') {
             const senderName = msg.from?.first_name || 'Imperial Client';
             const portalUrl =
               process.env.APP_URL ||
