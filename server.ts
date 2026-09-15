@@ -26,6 +26,7 @@ app.post('/api/contact', async (req, res) => {
 
     const botToken = process.env.TELEGRAM_BOT_TOKEN || '8969258082:AAHz_-2Mm6M2ZKBiY3LtSO7ZEgm2Yi32ujs';
     const chatId = process.env.TELEGRAM_CHAT_ID || '-1004399283423';
+    const ownerId = process.env.TELEGRAM_OWNER_ID || '8761043571';
 
     // Format clean Telegram markdown message
     const telegramText =
@@ -106,7 +107,38 @@ async function startTelegramPolling() {
           const isStartCommand = rawText.startsWith('/start');
           const isHelpCommand = rawText.startsWith('/help') || rawText.startsWith('/portal') || rawText.startsWith('/contact');
 
-          // Respond to /start or /help in group chats as well as private chats
+          // Strict Authorization Check:
+          // Only respond if the message is from your authorized Group OR your direct Personal User ID
+          const currentChatId = String(msg.chat.id);
+          const currentSenderId = String(msg.from?.id || '');
+          const authorizedGroupId = String(process.env.TELEGRAM_CHAT_ID || '-1004399283423');
+          const authorizedOwnerId = String(process.env.TELEGRAM_OWNER_ID || '8761043571');
+
+          const isAuthorized =
+            currentChatId === authorizedGroupId ||
+            currentSenderId === authorizedOwnerId;
+
+          // If an unauthorized stranger attempts to use the bot:
+          if (!isAuthorized) {
+            console.warn(`[Telegram Bot] Blocked unauthorized interaction from user: ${currentSenderId} in chat: ${currentChatId}`);
+            // Send a sleek sovereign restricted access advisory
+            if (msg.chat.type === 'private' && (isStartCommand || isHelpCommand)) {
+              await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  chat_id: msg.chat.id,
+                  reply_to_message_id: msg.message_id,
+                  text: `🔒 *ACCESS RESTRICTED // VXRE INTERNAL*\n\nThis communication terminal is exclusively calibrated for authorized directors and official retainers.\n\nTo initiate an inquiry or commission our services, visit the official portal:\n🌐 [vxre.run.place](https://vxre.run.place)`,
+                  parse_mode: 'Markdown',
+                  disable_web_page_preview: true,
+                }),
+              });
+            }
+            continue;
+          }
+
+          // Respond to /start or /help in authorized contexts (owner or group)
           if (isStartCommand || isHelpCommand || msg.chat.type === 'private') {
             const senderName = msg.from?.first_name || 'Imperial Client';
             const portalUrl =
