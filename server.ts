@@ -149,7 +149,7 @@ async function startTelegramPolling() {
           message?: {
             message_id: number;
             chat: { id: number | string; type: string; title?: string };
-            from?: { first_name?: string; username?: string };
+            from?: { id?: number | string; first_name?: string; last_name?: string; username?: string };
             text?: string;
           };
         }>;
