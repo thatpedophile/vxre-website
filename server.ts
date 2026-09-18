@@ -10,6 +10,17 @@ const PORT = 3000;
 
 app.use(express.json());
 
+// Explicit SEO endpoints
+app.get('/sitemap.xml', (_req, res) => {
+  res.header('Content-Type', 'application/xml');
+  res.sendFile(path.join(process.cwd(), 'public', 'sitemap.xml'));
+});
+
+app.get('/robots.txt', (_req, res) => {
+  res.header('Content-Type', 'text/plain');
+  res.sendFile(path.join(process.cwd(), 'public', 'robots.txt'));
+});
+
 // API health endpoint
 app.get(['/api/health', '/health'], (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
